@@ -1,0 +1,123 @@
+import io
+import time
+import objc
+import AVFoundation
+from Foundation import NSObject, NSRunLoop, NSDate
+from PIL import Image as PILImage
+from mcp.server.fastmcp import FastMCP, Image
+
+# Create the MCP Server
+mcp = FastMCP("iPhone-Camera-Server")
+
+class PhotoDelegate(NSObject):
+    """Helper class to handle the asynchronous callback from macOS"""
+    def init(self):
+        self = objc.super(PhotoDelegate, self).init()
+        if self is None:
+            return None
+        self.data = None
+        self.done = False
+        return self
+
+    def captureOutput_didFinishProcessingPhoto_error_(self, output, photo, error):
+        if error:
+            print(f"Capture error: {error}")
+        else:
+            self.data = photo.fileDataRepresentation()
+        self.done = True
+
+def get_iphone_camera():
+    """Finds the Continuity Camera device"""
+    device_types = [
+        AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera,
+        AVFoundation.AVCaptureDeviceTypeExternalUnknown
+    ]
+    session = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
+        device_types, AVFoundation.AVMediaTypeVideo, AVFoundation.AVCaptureDevicePositionUnspecified
+    )
+    return next((d for d in session.devices() if d.isContinuityCamera()), None)
+
+@mcp.tool()
+def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5) -> Image:
+    """
+    Captures a high-resolution photo from the connected iPhone camera.
+    Use this to inspect hardware, read screens, or check wiring.
+
+    Args:
+        label: A label for the capture.
+        zoom: Software zoom factor (1.0 = full image, 2.0 = 2x crop, 4.0 = 4x crop, etc).
+        crop_x: Horizontal center of the crop region (0.0 = left edge, 0.5 = center, 1.0 = right edge).
+        crop_y: Vertical center of the crop region (0.0 = top edge, 0.5 = center, 1.0 = bottom edge).
+    """
+    iphone = get_iphone_camera()
+    if not iphone:
+        return "Error: No iPhone found. Ensure Continuity Camera is enabled."
+
+    # Setup Session
+    session = AVFoundation.AVCaptureSession.alloc().init()
+    session.setSessionPreset_(AVFoundation.AVCaptureSessionPresetPhoto)
+    
+    input_device = AVFoundation.AVCaptureDeviceInput.deviceInputWithDevice_error_(iphone, None)[0]
+    if not session.canAddInput_(input_device):
+        return "Error: Could not add iPhone as input."
+    session.addInput_(input_device)
+    
+    output = AVFoundation.AVCapturePhotoOutput.alloc().init()
+    session.addOutput_(output)
+
+    session.startRunning()
+
+    # Warm up
+    warmup_start = time.time()
+    while time.time() - warmup_start < 3.0:
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+
+    # Apply hardware zoom
+    max_zoom = float(iphone.activeFormat().videoMaxZoomFactor())
+    hw_zoom = max(1.0, min(zoom, max_zoom))
+    success, err = iphone.lockForConfiguration_(None)
+    if success:
+        iphone.setVideoZoomFactor_(hw_zoom)
+        iphone.unlockForConfiguration()
+        # Let zoom settle
+        settle_start = time.time()
+        while time.time() - settle_start < 1.0:
+            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+
+    # Capture Logic
+    delegate = PhotoDelegate.alloc().init()
+    settings = AVFoundation.AVCapturePhotoSettings.photoSettings()
+    output.capturePhotoWithSettings_delegate_(settings, delegate)
+
+    # Wait for the wireless handoff (max 15s)
+    timeout = 15.0
+    start = time.time()
+    while not delegate.done and (time.time() - start < timeout):
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+
+    session.stopRunning()
+
+    if delegate.data:
+        photo_data = bytes(delegate.data)
+
+        # Software crop for repositioning via crop_x/crop_y
+        if crop_x != 0.5 or crop_y != 0.5:
+            img = PILImage.open(io.BytesIO(photo_data))
+            w, h = img.size
+            # Crop to half the image, centered on (crop_x, crop_y)
+            crop_w, crop_h = w / 2, h / 2
+            cx = max(crop_w / 2, min(crop_x * w, w - crop_w / 2))
+            cy = max(crop_h / 2, min(crop_y * h, h - crop_h / 2))
+            box = (int(cx - crop_w / 2), int(cy - crop_h / 2),
+                   int(cx + crop_w / 2), int(cy + crop_h / 2))
+            img = img.crop(box)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            photo_data = buf.getvalue()
+
+        return Image(data=photo_data, format="jpeg")
+    
+    return "Error: Capture timed out or failed."
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

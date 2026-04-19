@@ -1,0 +1,4 @@
+pyobjc-framework-AVFoundation
+pyobjc-framework-Cocoa
+fastmcp
+Pillow
