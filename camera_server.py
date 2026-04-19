@@ -60,16 +60,17 @@ def list_cameras() -> str:
     return "\n".join(lines)
 
 @mcp.tool()
-def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5) -> Image:
+def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080) -> Image:
     """
-    Captures a high-resolution photo from the connected iPhone camera.
+    Captures a photo from the connected iPhone camera.
     Use this to inspect hardware, read screens, or check wiring.
 
     Args:
         label: A label for the capture.
-        zoom: Software zoom factor (1.0 = full image, 2.0 = 2x crop, 4.0 = 4x crop, etc).
+        zoom: Hardware zoom factor (1.0 = no zoom, 2.0 = 2x, etc).
         crop_x: Horizontal center of the crop region (0.0 = left edge, 0.5 = center, 1.0 = right edge).
         crop_y: Vertical center of the crop region (0.0 = top edge, 0.5 = center, 1.0 = bottom edge).
+        resolution: Max dimension in pixels for the returned image (default 1080). Lower values reduce LLM token cost.
     """
     iphone = get_iphone_camera()
     if not iphone:
@@ -120,24 +121,24 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
     session.stopRunning()
 
     if delegate.data:
-        photo_data = bytes(delegate.data)
+        img = PILImage.open(io.BytesIO(bytes(delegate.data)))
 
         # Software crop for repositioning via crop_x/crop_y
         if crop_x != 0.5 or crop_y != 0.5:
-            img = PILImage.open(io.BytesIO(photo_data))
             w, h = img.size
-            # Crop to half the image, centered on (crop_x, crop_y)
             crop_w, crop_h = w / 2, h / 2
             cx = max(crop_w / 2, min(crop_x * w, w - crop_w / 2))
             cy = max(crop_h / 2, min(crop_y * h, h - crop_h / 2))
             box = (int(cx - crop_w / 2), int(cy - crop_h / 2),
                    int(cx + crop_w / 2), int(cy + crop_h / 2))
             img = img.crop(box)
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=90)
-            photo_data = buf.getvalue()
 
-        return Image(data=photo_data, format="jpeg")
+        # Resize to limit LLM token cost
+        img.thumbnail((resolution, resolution), PILImage.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return Image(data=buf.getvalue(), format="jpeg")
     
     return "Error: Capture timed out or failed."
 

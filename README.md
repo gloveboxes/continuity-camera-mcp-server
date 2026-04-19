@@ -66,12 +66,13 @@ Once configured, you can ask Copilot to capture and analyse photos:
 
 ### Tool Parameters
 
-| Parameter | Type   | Default | Description |
-|-----------|--------|---------|-------------|
-| `label`   | string | `"iot_device"` | A label for the capture |
-| `zoom`    | float  | `1.0`   | Hardware zoom factor (1.0 = no zoom, 2.0 = 2x, etc.) |
-| `crop_x`  | float  | `0.5`   | Horizontal crop center (0.0 = left, 0.5 = center, 1.0 = right) |
-| `crop_y`  | float  | `0.5`   | Vertical crop center (0.0 = top, 0.5 = center, 1.0 = bottom) |
+| Parameter    | Type   | Default | Description |
+|--------------|--------|---------|-------------|
+| `label`      | string | `"iot_device"` | A label for the capture |
+| `zoom`       | float  | `1.0`   | Hardware zoom factor (1.0 = no zoom, 2.0 = 2x, etc.) |
+| `crop_x`     | float  | `0.5`   | Horizontal crop center (0.0 = left, 0.5 = center, 1.0 = right) |
+| `crop_y`     | float  | `0.5`   | Vertical crop center (0.0 = top, 0.5 = center, 1.0 = bottom) |
+| `resolution` | int    | `1080`  | Max image dimension in pixels. Lower values reduce LLM token cost |
 
 - **`zoom`** applies hardware zoom on the iPhone sensor — higher quality than digital crop
 - **`crop_x` / `crop_y`** apply a software crop to reposition the frame (useful for targeting objects near the edges)
