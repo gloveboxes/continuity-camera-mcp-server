@@ -38,6 +38,25 @@ def get_iphone_camera():
     return next((d for d in session.devices() if d.isContinuityCamera()), None)
 
 @mcp.tool()
+def list_cameras() -> str:
+    """Lists all available video capture devices and their Continuity Camera status."""
+    device_types = [
+        AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera,
+        AVFoundation.AVCaptureDeviceTypeExternalUnknown
+    ]
+    session = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
+        device_types, AVFoundation.AVMediaTypeVideo, AVFoundation.AVCaptureDevicePositionUnspecified
+    )
+    devices = session.devices()
+    if not devices:
+        return "No video capture devices found."
+    lines = []
+    for d in devices:
+        continuity = "Yes" if d.isContinuityCamera() else "No"
+        lines.append(f"- {d.localizedName()} (Continuity Camera: {continuity})")
+    return "\n".join(lines)
+
+@mcp.tool()
 def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5) -> Image:
     """
     Captures a high-resolution photo from the connected iPhone camera.

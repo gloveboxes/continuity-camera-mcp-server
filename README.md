@@ -35,22 +35,6 @@ Key features:
    pip install -r requirements.txt
    ```
 
-3. Verify your iPhone is detected:
-
-   ```bash
-   python -c "
-   import AVFoundation
-   types = [AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera,
-            AVFoundation.AVCaptureDeviceTypeExternalUnknown]
-   s = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
-       types, AVFoundation.AVMediaTypeVideo, AVFoundation.AVCaptureDevicePositionUnspecified)
-   for d in s.devices():
-       print(f'{d.localizedName()} (continuity={d.isContinuityCamera()})')
-   "
-   ```
-
-   You should see your iPhone listed with `continuity=True`.
-
 ## Adding to VS Code
 
 The camera server is a standalone MCP server that you reference from any workspace. Add it to your IoT project (or any workspace) by creating a `.vscode/mcp.json` file:
@@ -79,6 +63,7 @@ The server **must** use stdio transport. The HTTP transport runs request handler
 
 Once configured, you can ask Copilot to capture and analyse photos:
 
+- *"List available cameras"* — verifies your iPhone is detected
 - *"Capture a photo and describe what you see"*
 - *"Zoom in on the LCD panel"*
 - *"Take a photo at 3x zoom"*
