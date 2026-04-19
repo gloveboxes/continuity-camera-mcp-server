@@ -55,10 +55,6 @@ Replace `/path/to/continuity-camera-mcp-server` with the actual path to this rep
 
 VS Code automatically starts the stdio MCP server when the workspace loads. The `capture_photo` tool will be available to GitHub Copilot in chat.
 
-### Why stdio and not HTTP?
-
-The server **must** use stdio transport. The HTTP transport runs request handlers on worker threads, but macOS `AVFoundation` requires `NSRunLoop` callbacks to fire on the thread that initiated the capture session. With stdio, everything runs on the main thread and callbacks work reliably.
-
 ## Usage
 
 Once configured, you can ask Copilot to capture and analyse photos:
