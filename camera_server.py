@@ -60,7 +60,7 @@ def list_cameras() -> str:
     return "\n".join(lines)
 
 @mcp.tool()
-def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080) -> Image:
+def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080, rotate: int = 0) -> Image:
     """
     Captures a photo from the connected iPhone camera.
     Use this to inspect hardware, read screens, or check wiring.
@@ -71,6 +71,7 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
         crop_x: Horizontal center of the crop region (0.0 = left edge, 0.5 = center, 1.0 = right edge).
         crop_y: Vertical center of the crop region (0.0 = top edge, 0.5 = center, 1.0 = bottom edge).
         resolution: Max dimension in pixels for the returned image (default 1080). Lower values reduce LLM token cost.
+        rotate: Rotate the image clockwise in degrees (0, 90, 180, or 270).
     """
     iphone = get_iphone_camera()
     if not iphone:
@@ -132,6 +133,10 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
             box = (int(cx - crop_w / 2), int(cy - crop_h / 2),
                    int(cx + crop_w / 2), int(cy + crop_h / 2))
             img = img.crop(box)
+
+        # Rotate if requested (Pillow rotates counter-clockwise, so negate)
+        if rotate in (90, 180, 270):
+            img = img.rotate(-rotate, expand=True)
 
         # Resize to limit LLM token cost
         img.thumbnail((resolution, resolution), PILImage.LANCZOS)

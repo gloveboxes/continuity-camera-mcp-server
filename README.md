@@ -73,6 +73,7 @@ Once configured, you can ask Copilot to capture and analyse photos:
 | `crop_x`     | float  | `0.5`   | Horizontal crop center (0.0 = left, 0.5 = center, 1.0 = right) |
 | `crop_y`     | float  | `0.5`   | Vertical crop center (0.0 = top, 0.5 = center, 1.0 = bottom) |
 | `resolution` | int    | `1080`  | Max image dimension in pixels. Lower values reduce LLM token cost |
+| `rotate`     | int    | `0`     | Rotate image clockwise (0, 90, 180, or 270 degrees) |
 
 - **`zoom`** applies hardware zoom on the iPhone sensor — higher quality than digital crop
 - **`crop_x` / `crop_y`** apply a software crop to reposition the frame (useful for targeting objects near the edges)
