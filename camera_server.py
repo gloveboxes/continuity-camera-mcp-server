@@ -7,7 +7,10 @@ from PIL import Image as PILImage
 from mcp.server.fastmcp import FastMCP, Image
 
 # Create the MCP Server
-mcp = FastMCP("iPhone-Camera-Server")
+mcp = FastMCP(
+    "iPhone-Camera-Server",
+    instructions="Before capturing a photo, call list_cameras to verify an iPhone with Continuity Camera is available. If no Continuity Camera device is found, report this to the user instead of attempting a capture."
+)
 
 class PhotoDelegate(NSObject):
     """Helper class to handle the asynchronous callback from macOS"""
