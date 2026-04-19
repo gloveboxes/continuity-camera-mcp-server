@@ -124,29 +124,19 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
     if delegate.data:
         img = PILImage.open(io.BytesIO(bytes(delegate.data)))
 
-        # Adjust crop coordinates to account for rotation so crop_x/crop_y
-        # are always relative to the final (rotated) image orientation
-        adj_x, adj_y = crop_x, crop_y
-        if rotate == 90:
-            adj_x, adj_y = crop_y, 1.0 - crop_x
-        elif rotate == 180:
-            adj_x, adj_y = 1.0 - crop_x, 1.0 - crop_y
-        elif rotate == 270:
-            adj_x, adj_y = 1.0 - crop_y, crop_x
+        # Rotate first so crop coordinates are relative to the final image
+        if rotate in (90, 180, 270):
+            img = img.rotate(-rotate, expand=True)
 
         # Software crop for repositioning via crop_x/crop_y
-        if adj_x != 0.5 or adj_y != 0.5:
+        if crop_x != 0.5 or crop_y != 0.5:
             w, h = img.size
             crop_w, crop_h = w / 2, h / 2
-            cx = max(crop_w / 2, min(adj_x * w, w - crop_w / 2))
-            cy = max(crop_h / 2, min(adj_y * h, h - crop_h / 2))
+            cx = max(crop_w / 2, min(crop_x * w, w - crop_w / 2))
+            cy = max(crop_h / 2, min(crop_y * h, h - crop_h / 2))
             box = (int(cx - crop_w / 2), int(cy - crop_h / 2),
                    int(cx + crop_w / 2), int(cy + crop_h / 2))
             img = img.crop(box)
-
-        # Rotate if requested (Pillow rotates counter-clockwise, so negate)
-        if rotate in (90, 180, 270):
-            img = img.rotate(-rotate, expand=True)
 
         # Resize to limit LLM token cost
         img.thumbnail((resolution, resolution), PILImage.LANCZOS)
