@@ -1,4 +1,4 @@
-# Continuity Camera MCP Server
+# Continuity Camera MCP Server v1.0
 
 An MCP (Model Context Protocol) server that captures photos from an iPhone via macOS Continuity Camera. Designed to give AI coding assistants like GitHub Copilot the ability to see your physical workspace — inspect hardware, read screens, check wiring, and more.
 
