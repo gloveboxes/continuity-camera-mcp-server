@@ -131,7 +131,7 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
         # Software crop for repositioning via crop_x/crop_y
         if crop_x != 0.5 or crop_y != 0.5:
             w, h = img.size
-            crop_w, crop_h = w / 2, h / 2
+            crop_w, crop_h = w * 0.75, h * 0.75
             cx = max(crop_w / 2, min(crop_x * w, w - crop_w / 2))
             cy = max(crop_h / 2, min(crop_y * h, h - crop_h / 2))
             box = (int(cx - crop_w / 2), int(cy - crop_h / 2),
