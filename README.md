@@ -69,7 +69,13 @@ Key features:
 
    Replace `/path/to/camera-server` with the actual path to this repository.
 
-2. The `capture_photo` tool will now be available to GitHub Copilot in chat.
+2. Start the MCP server from the VS Code Command Palette:
+
+   - Press **Cmd+Shift+P**
+   - Type **MCP: List Servers**
+   - Select **iPhone-Camera-Server** and click **Start**
+
+3. The `capture_photo` tool will now be available to GitHub Copilot in chat.
 
 ### Why stdio and not HTTP?
 
