@@ -53,29 +53,23 @@ Key features:
 
 ## Adding to VS Code
 
-1. Create `.vscode/mcp.json` in your workspace (or any workspace where you want camera access):
+The camera server is a standalone MCP server that you reference from any workspace. Add it to your IoT project (or any workspace) by creating a `.vscode/mcp.json` file:
 
-   ```json
-   {
-     "servers": {
-       "iPhone-Camera-Server": {
-         "type": "stdio",
-         "command": "/path/to/camera-server/.venv/bin/python",
-         "args": ["/path/to/camera-server/camera_server.py"]
-       }
-     }
-   }
-   ```
+```json
+{
+  "servers": {
+    "iPhone-Camera-Server": {
+      "type": "stdio",
+      "command": "/path/to/continuity-camera-mcp-server/.venv/bin/python",
+      "args": ["/path/to/continuity-camera-mcp-server/camera_server.py"]
+    }
+  }
+}
+```
 
-   Replace `/path/to/camera-server` with the actual path to this repository.
+Replace `/path/to/continuity-camera-mcp-server` with the actual path to this repository.
 
-2. Start the MCP server from the VS Code Command Palette:
-
-   - Press **Cmd+Shift+P**
-   - Type **MCP: List Servers**
-   - Select **iPhone-Camera-Server** and click **Start**
-
-3. The `capture_photo` tool will now be available to GitHub Copilot in chat.
+VS Code automatically starts the stdio MCP server when the workspace loads. The `capture_photo` tool will be available to GitHub Copilot in chat.
 
 ### Why stdio and not HTTP?
 
