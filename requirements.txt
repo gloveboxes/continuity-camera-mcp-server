@@ -1,4 +1,4 @@
-pyobjc-framework-AVFoundation
-pyobjc-framework-Cocoa
-fastmcp
-Pillow
+pyobjc-framework-AVFoundation==12.1
+pyobjc-framework-Cocoa==12.1
+fastmcp==3.2.4
+Pillow==12.2.0
