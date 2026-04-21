@@ -6,11 +6,11 @@ An MCP (Model Context Protocol) server built with FastMCP that captures photos f
 
 The server uses macOS **Continuity Camera** to wirelessly access your iPhone's camera from Python via the `AVFoundation` framework (through PyObjC). It exposes two MCP tools:
 
-- **`capture_photo`** — Captures a high-resolution JPEG from the iPhone camera with optional zoom, crop, rotation, and delay control
-- **`capture_burst`** — Captures multiple photos in rapid succession, reusing a single session to avoid the ~3s warmup between shots. Returns all frames as inline images in one response
+- **`capture_photo`** — Captures one or more high-resolution JPEGs from the iPhone camera with optional burst, zoom, crop, rotation, and delay control
 - **`list_cameras`** — Lists all available video capture devices and their Continuity Camera status
 
 Key features:
+
 - **Software zoom** for predictable framing (gentler control curve to preserve context)
 - **Software crop** for repositioning the frame to any region of the image
 - **Rotation support** (0°, 90°, 180°, 270°) for correcting image orientation
@@ -73,44 +73,46 @@ Once configured, GitHub Copilot can use the server's tools. Common patterns:
 - *"Take a photo with 3x zoom on the center"*
 - *"Zoom in on the bottom-right corner at 2x zoom"*
 - *"Capture a portrait-oriented photo"*
+- *"Rotate 90 degrees, zoom into the display, and capture 4 frames 0.5 seconds apart"*
 - *"Wait 15 seconds for the firmware to boot, then capture"*
 - *"Take 5 photos 2 seconds apart to watch the boot sequence"*
-- *"Capture a burst of 3 frames to catch the LED blink pattern"*
+- *"Capture 3 frames to catch the LED blink pattern"*
 
-The server includes built-in guidance to help Copilot use `capture_photo` for single shots, `capture_burst` for multi-frame captures, and only call `list_cameras` for diagnostics.
+The server includes built-in guidance to help Copilot use `capture_photo` for both single shots and multi-frame captures, and only call `list_cameras` for diagnostics.
 
 ### Tool Parameters for `capture_photo`
 
 | Parameter    | Type   | Default | Description |
 |--------------|--------|---------|-------------|
-| `label`      | string | `"iot_device"` | A descriptive label for this capture |
+| `count`      | int    | `1`     | Number of photos to capture (1-10). Values above 1 return a burst |
+| `interval`   | float  | `1.0`   | Seconds between captures when `count > 1` (minimum 0.5) |
 | `zoom`       | float  | `1.0`   | Software zoom factor. Uses a gentle curve (1.0 = no zoom, 2.0 ≈ 1.65x actual, 3.0 ≈ 2.3x actual) |
 | `crop_x`     | float  | `0.5`   | Horizontal crop center (0.0 = left, 0.5 = center, 1.0 = right) |
 | `crop_y`     | float  | `0.5`   | Vertical crop center (0.0 = top, 0.5 = center, 1.0 = bottom) |
 | `resolution` | int    | `1080`  | Base max image dimension in pixels. Heavily zoomed/cropped images may use up to 2x this value to preserve detail |
 | `rotate`     | int    | `0`     | Rotate image clockwise (0, 90, 180, or 270 degrees) |
-| `pre_capture_delay_seconds` | float | `0.0` | Wait this many seconds before the shutter fires (useful for device boot or UI render time) |
+| `pre_capture_delay_seconds` | float | `0.0` | Wait this many seconds before the first shutter fires (useful for device boot or UI render time) |
 
 **Parameter notes:**
+
+- **`count` / `interval`** turn `capture_photo` into a burst capture. The session warms up once, then subsequent frames are captured from the same running session to avoid the usual reconnect delay.
 - **`zoom`** applies software zoom for predictable framing. The control curve is intentionally gentler than literal crop magnification to preserve more context and make small zoom values less aggressive.
 - **`crop_x` / `crop_y`** pan the zoomed frame relative to the final (rotated) image. Combined with `zoom`, this lets you focus on specific regions.
+- **`rotate`** must be one of `0`, `90`, `180`, or `270`. Rotation is applied before crop and zoom are evaluated, so if you change orientation you should re-check `crop_x` / `crop_y` against the rotated frame.
 - **`resolution`** is the base output size. When `zoom >= 1.25`, the server increases output resolution (up to 4096px) to preserve fine details that would otherwise be lost to downsampling.
-- **`pre_capture_delay_seconds`** pauses before snapping the photo — useful when capturing external hardware that needs time to boot or render a screen.
+- **`pre_capture_delay_seconds`** pauses before the first photo — useful when capturing external hardware that needs time to boot or render a screen.
 
-### Tool Parameters for `capture_burst`
+**How burst mode works:** When `count > 1`, the session warms up once (~3s), then fires frames in rapid succession with only the `interval` gap between them. Each frame is returned as a labelled inline image in the MCP response, so the agent sees all frames at once. Frame count is capped at 10 to limit token cost.
 
-| Parameter    | Type   | Default | Description |
-|--------------|--------|---------|-------------|
-| `count`      | int    | `3`     | Number of photos to capture (1-10) |
-| `interval`   | float  | `1.0`   | Seconds between each capture (minimum 0.5) |
-| `zoom`       | float  | `1.0`   | Software zoom factor (same curve as `capture_photo`) |
-| `crop_x`     | float  | `0.5`   | Horizontal crop center (0.0 = left, 0.5 = center, 1.0 = right) |
-| `crop_y`     | float  | `0.5`   | Vertical crop center (0.0 = top, 0.5 = center, 1.0 = bottom) |
-| `resolution` | int    | `1080`  | Max dimension in pixels for each image |
-| `rotate`     | int    | `0`     | Rotate each image clockwise (0, 90, 180, or 270 degrees) |
-| `pre_capture_delay_seconds` | float | `0.0` | Wait this many seconds before the *first* capture only |
+**Recommended tuning workflow:** Start with `count=1`, `zoom=1.0`, and your desired `rotate` value. Once the orientation is correct, adjust `crop_x`, `crop_y`, and `zoom` until the subject is framed correctly. Then increase `count` to enable burst capture if you need to watch state changes over time.
 
-**How it works:** The session warms up once (~3s), then fires frames in rapid succession with only the `interval` gap between them. Each frame is returned as a labelled inline image in the MCP response, so the agent sees all frames at once. Frame count is capped at 10 to limit token cost.
+### Known-Good Presets
+
+- **General hardware check**: `capture_photo()` or `capture_photo(pre_capture_delay_seconds=15)`
+- **Altair display, rotated view**: `capture_photo(rotate=90, zoom=2.0, crop_x=0.24, crop_y=0.42, pre_capture_delay_seconds=15)`
+- **Altair state-change burst**: `capture_photo(count=3, interval=0.5, zoom=1.8, crop_x=0.36, crop_y=0.63, pre_capture_delay_seconds=15)`
+
+These are starting points, not fixed calibrations. If the camera position changes, re-tune `rotate` first, then `crop_x` / `crop_y`, then `zoom`.
 
 ## Troubleshooting
 

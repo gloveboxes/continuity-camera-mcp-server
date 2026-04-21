@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP, Image
 # Create the MCP Server
 mcp = FastMCP(
     "iPhone-Camera-Server",
-    instructions="Use capture_photo for single shots. Use capture_burst when you need multiple frames quickly (time-lapse, before/after, catching transient states) — it reuses one session so frames after the first are fast. Only call list_cameras if the user explicitly asks for device status, or if a capture fails with a camera-availability error and you need diagnostics."
+    instructions="Use capture_photo for both single shots and multi-frame bursts. Set count above 1 when you need multiple frames quickly (time-lapse, before/after, catching transient states); the tool reuses one session so frames after the first are fast. Only call list_cameras if the user explicitly asks for device status, or if a capture fails with a camera-availability error and you need diagnostics."
 )
 
 class PhotoDelegate(NSObject):
@@ -83,6 +83,36 @@ def _capture_one_frame(output):
 
     return delegate.data
 
+def _wait(seconds):
+    """Pumps the run loop while waiting for camera warmup or capture timing."""
+    end_time = time.time() + max(0.0, float(seconds))
+    while time.time() < end_time:
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+
+def _capture_error(message, count):
+    """Returns an error payload that matches single-shot or burst capture shape."""
+    if count > 1:
+        return [f"Error: {message}"]
+    return f"Error: {message}"
+
+def _validate_capture_args(count, interval, rotate):
+    """Normalizes public capture parameters and rejects unsupported values."""
+    try:
+        normalized_count = max(1, min(10, int(count)))
+    except (TypeError, ValueError):
+        # Hardcode 1 because the raw count is invalid and can't be compared in _capture_error.
+        return None, None, _capture_error("count must be an integer between 1 and 10.", 1)
+
+    try:
+        normalized_interval = max(0.5, float(interval))
+    except (TypeError, ValueError):
+        return None, None, _capture_error("interval must be a number greater than or equal to 0.5 seconds.", normalized_count)
+
+    if rotate not in (0, 90, 180, 270):
+        return None, None, _capture_error("rotate must be one of 0, 90, 180, or 270.", normalized_count)
+
+    return normalized_count, normalized_interval, None
+
 @mcp.tool()
 def list_cameras() -> str:
     """Lists all available video capture devices and their Continuity Camera status."""
@@ -103,23 +133,28 @@ def list_cameras() -> str:
     return "\n".join(lines)
 
 @mcp.tool()
-def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080, rotate: int = 0, pre_capture_delay_seconds: float = 0.0) -> Image:
+def capture_photo(count: int = 1, interval: float = 1.0, zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080, rotate: int = 0, pre_capture_delay_seconds: float = 0.0):
     """
-    Captures a photo from the connected iPhone camera.
-    Use this to inspect hardware, read screens, or check wiring.
+    Captures one or more photos from the connected iPhone camera.
+    Use this to inspect hardware, read screens, check wiring, or watch a device state change over time.
 
     Args:
-        label: A label for the capture.
+        count: Number of photos to capture (1-10). Use 1 for a single shot.
+        interval: Seconds between captures when count > 1 (minimum 0.5).
         zoom: Software zoom factor (1.0 = no zoom, 2.0 = 2x, etc).
         crop_x: Horizontal center of the crop region (0.0 = left edge, 0.5 = center, 1.0 = right edge).
         crop_y: Vertical center of the crop region (0.0 = top edge, 0.5 = center, 1.0 = bottom edge).
         resolution: Max dimension in pixels for the returned image (default 1080). Lower values reduce LLM token cost.
         rotate: Rotate the image clockwise in degrees (0, 90, 180, or 270).
-        pre_capture_delay_seconds: Wait this many seconds immediately before taking the photo.
+        pre_capture_delay_seconds: Wait this many seconds before the first capture.
     """
+    count, interval, validation_error = _validate_capture_args(count, interval, rotate)
+    if validation_error:
+        return validation_error
+
     iphone = get_iphone_camera()
     if not iphone:
-        return "Error: No iPhone found. Ensure Continuity Camera is enabled."
+        return _capture_error("No iPhone found. Ensure Continuity Camera is enabled.", count)
 
     # Setup Session
     session = AVFoundation.AVCaptureSession.alloc().init()
@@ -127,7 +162,7 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
     
     input_device = AVFoundation.AVCaptureDeviceInput.deviceInputWithDevice_error_(iphone, None)[0]
     if not session.canAddInput_(input_device):
-        return "Error: Could not add iPhone as input."
+        return _capture_error("Could not add iPhone as input.", count)
     session.addInput_(input_device)
     
     output = AVFoundation.AVCapturePhotoOutput.alloc().init()
@@ -136,9 +171,7 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
     session.startRunning()
 
     # Warm up
-    warmup_start = time.time()
-    while time.time() - warmup_start < 3.0:
-        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+    _wait(3.0)
 
     # Always reset hardware zoom so captures are fully controlled by the
     # software pipeline below and no stale device zoom persists between calls.
@@ -147,103 +180,40 @@ def capture_photo(label: str = "iot_device", zoom: float = 1.0, crop_x: float = 
         iphone.setVideoZoomFactor_(1.0)
         iphone.unlockForConfiguration()
         # Let the device settle after resetting zoom.
-        settle_start = time.time()
-        while time.time() - settle_start < 1.0:
-            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+        _wait(1.0)
 
-    # Optional delay so external firmware/UI has time to render before capture.
+    # Optional delay so external firmware/UI has time to render before the first capture.
     if pre_capture_delay_seconds > 0:
-        delay_start = time.time()
-        while time.time() - delay_start < pre_capture_delay_seconds:
-            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+        _wait(pre_capture_delay_seconds)
 
-    raw_data = _capture_one_frame(output)
-    session.stopRunning()
-
-    if raw_data:
-        return _process_image(raw_data, zoom, crop_x, crop_y, resolution, rotate)
-    
-    return "Error: Capture timed out or failed."
-
-@mcp.tool()
-def capture_burst(count: int = 3, interval: float = 1.0, zoom: float = 1.0, crop_x: float = 0.5, crop_y: float = 0.5, resolution: int = 1080, rotate: int = 0, pre_capture_delay_seconds: float = 0.0) -> list:
-    """
-    Captures multiple photos in rapid succession from the iPhone camera,
-    reusing a single session to avoid the ~3 second warmup between shots.
-    Use this for time-lapse monitoring, catching transient states (LED blinks,
-    boot screens), or before/after comparisons.
-
-    Args:
-        count: Number of photos to capture (1-10).
-        interval: Seconds to wait between each capture (minimum 0.5).
-        zoom: Software zoom factor (1.0 = no zoom, 2.0 = 2x, etc).
-        crop_x: Horizontal center of the crop region (0.0 = left, 0.5 = center, 1.0 = right).
-        crop_y: Vertical center of the crop region (0.0 = top, 0.5 = center, 1.0 = bottom).
-        resolution: Max dimension in pixels for each returned image (default 1080).
-        rotate: Rotate each image clockwise in degrees (0, 90, 180, or 270).
-        pre_capture_delay_seconds: Wait this many seconds before the first capture.
-    """
-    count = max(1, min(10, int(count)))
-    interval = max(0.5, float(interval))
-
-    iphone = get_iphone_camera()
-    if not iphone:
-        return ["Error: No iPhone found. Ensure Continuity Camera is enabled."]
-
-    session = AVFoundation.AVCaptureSession.alloc().init()
-    session.setSessionPreset_(AVFoundation.AVCaptureSessionPresetPhoto)
-
-    input_device = AVFoundation.AVCaptureDeviceInput.deviceInputWithDevice_error_(iphone, None)[0]
-    if not session.canAddInput_(input_device):
-        return ["Error: Could not add iPhone as input."]
-    session.addInput_(input_device)
-
-    output = AVFoundation.AVCapturePhotoOutput.alloc().init()
-    session.addOutput_(output)
-
-    session.startRunning()
-
-    # Warm up once
-    warmup_start = time.time()
-    while time.time() - warmup_start < 3.0:
-        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
-
-    # Reset hardware zoom
-    success, err = iphone.lockForConfiguration_(None)
-    if success:
-        iphone.setVideoZoomFactor_(1.0)
-        iphone.unlockForConfiguration()
-        settle_start = time.time()
-        while time.time() - settle_start < 1.0:
-            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
-
-    # Optional pre-capture delay (before first frame only)
-    if pre_capture_delay_seconds > 0:
-        delay_start = time.time()
-        while time.time() - delay_start < pre_capture_delay_seconds:
-            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
-
-    results = []
-    for i in range(count):
-        if i > 0:
-            # Wait interval between frames (pump the run loop to stay responsive)
-            wait_start = time.time()
-            while time.time() - wait_start < interval:
-                NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.1))
+    captures = []
+    for index in range(count):
+        if index > 0:
+            _wait(interval)
 
         raw_data = _capture_one_frame(output)
-        frame_num = i + 1
+        if count == 1:
+            captures.append(raw_data)
+            continue
+
+        frame_num = index + 1
         if raw_data:
-            results.append(f"Frame {frame_num}/{count}")
-            results.append(_process_image(raw_data, zoom, crop_x, crop_y, resolution, rotate))
+            captures.append(f"Frame {frame_num}/{count}")
+            captures.append(_process_image(raw_data, zoom, crop_x, crop_y, resolution, rotate))
         else:
-            results.append(f"Frame {frame_num}/{count}: capture failed")
+            captures.append(f"Frame {frame_num}/{count}: capture failed")
 
     session.stopRunning()
 
-    if not results:
-        return ["Error: All captures failed."]
-    return results
+    if count == 1:
+        raw_data = captures[0]
+        if raw_data:
+            return _process_image(raw_data, zoom, crop_x, crop_y, resolution, rotate)
+        return _capture_error("Capture timed out or failed.", count)
+
+    if not captures:
+        return _capture_error("All captures failed.", count)
+    return captures
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
